@@ -3,19 +3,22 @@ title: "p8105_hw2_jj3564"
 output: github_document
 date: "2025-10-01"
 ---
-install.packages("readxl")
-install.packages("janitor")
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 
 library(tidyverse)
 library(readxl)
 library(knitr)
+
 ```
+# Problem 0
+
+This homework uses GitHub, R Projects, and R Markdown for reproducibility. All data files are stored in the `data/` sub directory, and relative paths are used.
 
 # Problem 1
 
-## Clean data in pols-month
+## data cleaning first 
 
 ```{r}
 ## load data
@@ -23,7 +26,7 @@ pols_df = read_csv("data/fivethirtyeight_datasets/pols-month.csv")
 
 ## clean data
 pols_cleaned = pols_df |> 
-  separate(mon, into = c("year", "month", "day"), sep = "-", convert = TRUE) |> 
+  separate('mon', into = c("year", "month", "day"), sep = "-", convert = TRUE) |> 
   mutate(
       month = month.name[month],
       president = case_when(
@@ -32,7 +35,7 @@ pols_cleaned = pols_df |>
       TRUE ~ NA_character_
     )
   ) |> 
-  select(-prez_dem, -prez_gop, -day) |> 
+  select(-prez_gop,-prez_dem, -day) |> 
   select (year, month, president, everything())
   
 pols_cleaned
@@ -40,7 +43,7 @@ pols_cleaned
 
 The pols-month.csv dataset contained monthly political control data, including presidential party affiliation (prez_gop/prez_dem) and the distribution of governorships and congressional seats, starting from 1947. 
 
-## Clean data in snp
+## Clean snp.csv data
 
 ```{r}
 ## load data
@@ -64,9 +67,10 @@ snp_cleaned = snp_df |>
 snp_cleaned
 ```
 
-The snp.csv file provided the monthly closing value of the S&P 500 index, tracking market performance across the period. 
 
-## Clean data in unemployment
+
+### Clean `unemployment.csv`
+This dataset is in wide format, with months as columns. We pivot it into long format and ensure the month variable matches the same names as before
 
 ```{r}
 ## load data
@@ -77,229 +81,92 @@ unemployment_cleaned = unemployment_df |>
   rename(year = Year) |> 
   pivot_longer(
     cols = Jan:Dec,
-    names_to = "month_abbr",
-    values_to = "unemployment_rate"
+    names_to = "month",
+    values_to = "unemployment"
   ) |> 
 mutate(
-    month = month.name[match(month_abbr, month.abb)]
+    month = month.name[match(month, month.abb)]
 ) |> 
-select(year, month, unemployment_rate) |> 
+select(year, month, unemployment) |> 
 arrange(year, month)
 
 unemployment_cleaned
 ```
 
-The unemployment.csv dataset held the U.S. unemployment rate, originally in a wide format with each month as a separate column.
 
-## Join the data
 
-```{r}
-merged_df = pols_cleaned |> 
+### Merge datasets
+We merge `pols` with `snp`, then merge unemployment.
+
+```{r merge-data}
+mergesum_df = pols_cleaned |> 
   left_join(snp_cleaned, by = c("year", "month")) |> 
   left_join(unemployment_cleaned, by = c("year", "month"))
 
-merged_df
-final_dim = dim(merged_df)
-final_years = range(merged_df$year)
-final_names = names(merged_df)
+mergesum_df
+final_dim = dim(mergesum_df)
+final_years = range(mergesum_df$year)
+final_names = names(mergesum_df)
 
-final_dim
-final_years
-final_names
+mergesum_df
 ```
 
-This project merged three datasets provided by FiveThirtyEight.
-The resulting tidy dataset, created by merging the three files using left_join, has 822 observations and 11 variables. The data spans the years from 1947 to 2015. Key variables include year, month, president, snp_value, and unemployment_rate.
+**Summary**: The `pols` dataset contains information about political party control. The `snp` dataset contains S&P stock market closing values. The `unemp` dataset contains unemployment percentages. After merging, we have `r merged_summary$n_obs` observations, spanning `r merged_summary$min_year` to `r merged_summary$max_year`. Key variables: `year`, `month`, `president`, `close` (S&P index), and `unemployment`.
 
 
-# Problem 2
+# Problem 2: Trash Wheel Data
 
 
-```{r}
-trash_file <- "data/202509 Trash Wheel Collection Data.xlsx"
 
-mr_trash_df <- read_excel(
-  trash_file,
-  sheet = "Mr. Trash Wheel",
-  range = cell_cols("A:N")
-) |> 
-  janitor::clean_names() |> 
-  filter(!is.na(dumpster)) |> 
-  mutate(
+### Clean Mr. Trash Wheel
+```{r trash-wheel}
+
+mr_trash <- read_excel(-"data/202509 Trash Wheel Collection Data.xlsx",  sheet = "Mr. Trash Wheel",
+  range = cell_cols("A:N")) %>%
+janitor::clean_names() %>%
+filter(!is.na(dumpster)) %>%
+mutate(
     sports_balls = as.integer(round(sports_balls, 0)),
     year = as.numeric(year),    
-    wheel = "Mr. Trash Wheel"
-  )
-
-prof_trash_df <- read_excel(
-  trash_file,
-  sheet = "Professor Trash Wheel",
-  range = cell_cols("A:M")
-) |> 
-  janitor::clean_names() |> 
-  filter(!is.na(dumpster)) |> 
-  mutate(
-    year = as.numeric(year),   
-    wheel = "Professor Trash Wheel"
-  )
-
-gwynnda_df <- read_excel(
-  trash_file,
-  sheet = "Gwynns Falls Trash Wheel",
-  range = cell_cols("A:L")
-) |> 
-  janitor::clean_names() |> 
-  filter(!is.na(dumpster)) |> 
-  mutate(
-    year = as.numeric(year),     
-    wheel = "Gwynns Falls Trash Wheel"
-  )
-
-trash_wheel_df <- bind_rows(mr_trash_df, prof_trash_df, gwynnda_df)
-
+    wheel = "Mr. Trash Wheel")
 ```
 
-## The total weight of trash and the number of cigarette
 
+### Clean Professor Trash Wheel
 ```{r}
-trash_summary <- list(
-  n_obs = nrow(trash_wheel_df),
-  
-  prof_total_weight = trash_wheel_df |> 
-    filter(wheel == "Professor Trash Wheel") |> 
-    summarise(total = sum(weight_tons, na.rm = TRUE)) |> 
-    pull(total),
-    
-  gwynnda_cigs_june2022 = trash_wheel_df |> 
-    filter(wheel == "Gwynns Falls Trash Wheel", 
-           year == 2022, month(date) == 6) |> 
-    summarise(total = sum(cigarette_butts, na.rm = TRUE)) |> 
-    pull(total)
-)
+prof_trash <- read_excel("data/202509 Trash Wheel Collection Data.xlsx", sheet = "Professor Trash Wheel", skip = 1) %>%
+clean_names() %>%
+filter(!is.na(dumpster)) %>%
+mutate(sports_balls = as.integer(round(sports_balls,0)), wheel = "Professor")
 ```
 
-## Paragraph about these data
 
-The combined Trash Wheel dataset contains `r trash_summary$n_obs` observations from three sources: Mr. Trash Wheel, Professor Trash Wheel, and Gwynns Falls. Key variables include date of collection, weight in tons, volume in cubic yards, and counts of items such as plastic bottles, cigarette butts, and sports balls. For example, Professor Trash Wheel has collected a total of `r round(trash_summary$prof_total_weight, 2)` tons of trash, while Gwynns collected `r trash_summary$gwynnda_cigs_june2022` cigarette butts in June 2022.
-
-
-# Problem 3
-
-## Tidy data
+### Clean Gwynnda
 ```{r}
+gwynnda <- read_excel("data/Trash-Wheel-Collection-Totals-7-2020-2.xlsx", sheet = "Gwynnda", skip = 1) %>%
+clean_names() %>%
+filter(!is.na(dumpster)) %>%
+mutate(sports_balls = as.integer(round(sports_balls,0)), wheel = "Gwynnda")
 
-zori_file <- "data/zillow_data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv"
-zip_file  <- "data/zillow_data/Zip Codes.csv"
 
-
-zori_df <- read_csv(zori_file) |> 
-  pivot_longer(
-    cols = matches("^20"),  
-    names_to = "month",
-    values_to = "zori"
-  ) |> 
-  mutate(
-    month = ymd(month),      
-    year = year(month),
-    month_num = month(month)
-  )
-
-zip_df <- read_csv(zip_file) |> 
-   janitor::clean_names() 
-
+trash_all <- bind_rows(mr_trash, prof_trash, gwynnda)
 ```
 
-## Join the data
-```{r}
 
-zillow_df <- zori_df |> 
-  left_join(zip_df, by = c("RegionName" = "zip_code")) |> 
-  arrange(RegionName, month)
+### Summary statistics
+```{r trash-summary}
+n_obs <- nrow(trash_all)
+total_prof_weight <- sum(filter(trash_all, wheel == "Professor")$weight_tons, na.rm = TRUE)
+gwynnda_cigs_jun22 <- trash_all %>% filter(wheel == "Gwynnda", month == 6, year == 2022) %>%
+summarize(total = sum(cigarette_butts, na.rm = TRUE)) %>% pull(total)
 
+
+n_obs; total_prof_weight; gwynnda_cigs_jun22
 ```
 
-## Description of the data
-```{r}
 
-n_obs <- nrow(zillow_df)
-
-n_zip <- n_distinct(zillow_df$RegionName)
-
-n_neighborhood <- n_distinct(zillow_df$neighborhood)
-
-list(
-  total_observations = n_obs,
-  unique_zipcodes = n_zip,
-  unique_neighborhoods = n_neighborhood
-)
-
+**Summary**: The combined dataset has `r n_obs` observations. Key variables include dumpster ID, collection date, trash weight, and item counts. Professor Trash Wheel collected `r round(total_prof_weight,1)` tons of trash in total. Gwynnda collected `r gwynnda_cigs_jun22` cigarette butts in June 2022.
 ```
 
-The tidy dataset is structured as:
-
-- The dataset contains **`r n_obs` total observations**.  
-- There are **`r n_zip` unique ZIP codes** represented.  
-- These ZIP codes cover **`r n_neighborhood` distinct neighborhoods** across New York City.
 
 
-## Missing zip codes
-```{r}
-missing_zips <- setdiff(zip_df$zip_code, unique(zori_df$RegionName))
-
-
-```
-
-There are `r length(missing_zips)` ZIP codes found in the NYC geographical dataset that are excluded from the Zillow Rental Price index. The first few illustrative examples are shown below:
-
-```{r}
-zip_df |>
-  filter(zip_code %in% missing_zips) |>
-  select(zip_code, county, neighborhood) |>
-  head(5) |>
-  knitr::kable(caption = "First 5 ZIP Codes Missing from Zillow Data")
-```
-
-The exclusion of these ZIP codes from the Zillow Observed Rent Index (ZORI) is often due to data limitations or the nature of the area. Possible reasons include:
-
-1. Low Transaction Volume: Zillow requires a minimum number of recent rental listings to generate a reliable index value. ZIP codes with very low housing density or few market rentals (e.g., predominantly commercial or industrial zones) are often excluded.
-
-2. Institutional/Specialized Areas: Some ZIP codes might cover large tracts of public housing, parks, institutional campuses, or large commercial areas (like the financial district on weekends), where rental prices are non-market or not publicly tracked by Zillow.
-
-3. Data Quality: The exclusion could also be related to insufficient data quality or completeness in the ZORI source data for those specific regions over the analyzed timeframe.
-
-## Rental price
-
-```{r}
-drop_table <- zillow_df |> 
-  filter(month %in% c(ymd("2020-01-31"), ymd("2021-01-31"))) |> 
-  select(RegionName, county, neighborhood, month, zori) |> 
-  pivot_wider(names_from = month, values_from = zori, 
-              names_prefix = "zori_") |> 
-  mutate(drop = `zori_2020-01-31` - `zori_2021-01-31`) |> 
-  arrange(desc(drop)) |> 
-  slice(1:10)
-
-```
-
-Rental prices fluctuated dramatically during the COVID-19 pandemic.
-
-The following table shows the 10 ZIP codes (along with the borough and neighborhood) with the largest drop in rental price when comparing January 2020 to January 2021.
-
-```{r}
-
-drop_table |>
-  select(
-    `ZIP Code` = RegionName,
-    Borough = county, 
-    Neighborhood = neighborhood,
-    `Price Jan 2020` = `zori_2020-01-31`,
-    `Price Jan 2021` = `zori_2021-01-31`,
-    `Drop in Price ($)` = drop
-  ) |>
-  knitr::kable(
-    digits = 2,
-    caption = "Top 10 NYC ZIP Codes with the Largest Rental Price Drop (Jan 2020 to Jan 2021)"
-  )
-```
-
-The results clearly indicate that the largest rental price drops occurred in Manhattan (New York County). Areas such as Downtown, Midtown, and specific financial districts were hit hardest. This is consistent with the economic effects of the COVID-19 pandemic: the exodus of young professionals, students, and corporate renters from the city's highest-cost, most densely populated areas (which rely heavily on in-person work/commute) led to a massive oversupply and sharp decline in demand, resulting in significant rent reductions in these specific ZIP codes.
