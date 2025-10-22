@@ -12,6 +12,7 @@ library(readxl)
 library(knitr)
 
 ```
+
 # Problem 0
 
 This homework uses GitHub, R Projects, and R Markdown for reproducibility. All data files are stored in the `data/` sub directory, and relative paths are used.
@@ -98,7 +99,7 @@ unemployment_cleaned
 ### Merge datasets
 We merge `pols` with `snp`, then merge unemployment.
 
-```{r merge-data}
+```{r}
 mergesum_df = pols_cleaned |> 
   left_join(snp_cleaned, by = c("year", "month")) |> 
   left_join(unemployment_cleaned, by = c("year", "month"))
@@ -111,7 +112,7 @@ final_names = names(mergesum_df)
 mergesum_df
 ```
 
-**Summary**: The `pols` dataset contains information about political party control. The `snp` dataset contains S&P stock market closing values. The `unemp` dataset contains unemployment percentages. After merging, we have `r merged_summary$n_obs` observations, spanning `r merged_summary$min_year` to `r merged_summary$max_year`. Key variables: `year`, `month`, `president`, `close` (S&P index), and `unemployment`.
+**Summary**: The `pols` dataset contains information about political party control. The `snp` dataset contains S&P stock market closing values. The `unemp` dataset contains unemployment percentages. After merging, we have `r mergesum_df$n_obs` observations, spanning `r mergesum_df$min_year` to `r mergesum_df$max_year`. Key variables: `year`, `month`, `president`, `close` (S&P index), and `unemployment`.
 
 
 # Problem 2: Trash Wheel Data
@@ -119,9 +120,9 @@ mergesum_df
 
 
 ### Clean Mr. Trash Wheel
-```{r trash-wheel}
+```{r trash}
 
-mr_trash <- read_excel(-"data/202509 Trash Wheel Collection Data.xlsx",  sheet = "Mr. Trash Wheel",
+mr_trash <- read_excel("data/202509 Trash Wheel Collection Data.xlsx",  sheet = "Mr. Trash Wheel",
   range = cell_cols("A:N")) %>%
 janitor::clean_names() %>%
 filter(!is.na(dumpster)) %>%
@@ -135,24 +136,33 @@ mutate(
 ### Clean Professor Trash Wheel
 ```{r}
 prof_trash <- read_excel("data/202509 Trash Wheel Collection Data.xlsx", sheet = "Professor Trash Wheel", skip = 1) %>%
-clean_names() %>%
+janitor::clean_names() %>%
 filter(!is.na(dumpster)) %>%
-mutate(sports_balls = as.integer(round(sports_balls,0)), wheel = "Professor")
+mutate(
+    year = as.numeric(year),   
+    wheel = "Professor Trash Wheel"
+  )
+
+ 
+
+
 ```
 
 
 ### Clean Gwynnda
-```{r}
-gwynnda <- read_excel("data/Trash-Wheel-Collection-Totals-7-2020-2.xlsx", sheet = "Gwynnda", skip = 1) %>%
-clean_names() %>%
-filter(!is.na(dumpster)) %>%
-mutate(sports_balls = as.integer(round(sports_balls,0)), wheel = "Gwynnda")
-
-
-trash_all <- bind_rows(mr_trash, prof_trash, gwynnda)
+```{r Gwynnda}
+  gwynnda_df <- read_excel(
+  "data/202509 Trash Wheel Collection Data.xlsx",
+  sheet = "Gwynns Falls Trash Wheel"
+) |> 
+  janitor::clean_names() |> 
+  filter(!is.na(dumpster)) |> 
+  mutate(
+    year = as.numeric(year),     
+    wheel = "Gwynns Falls Trash Wheel"
+  )
+trash_all <- bind_rows(mr_trash, prof_trash, gwynnda_df)
 ```
-
-
 ### Summary statistics
 ```{r trash-summary}
 n_obs <- nrow(trash_all)
@@ -166,7 +176,137 @@ n_obs; total_prof_weight; gwynnda_cigs_jun22
 
 
 **Summary**: The combined dataset has `r n_obs` observations. Key variables include dumpster ID, collection date, trash weight, and item counts. Professor Trash Wheel collected `r round(total_prof_weight,1)` tons of trash in total. Gwynnda collected `r gwynnda_cigs_jun22` cigarette butts in June 2022.
+
+
+
+
+# Problem 3: Zillow Rent Data
+
+## Wrangling the datasets
+We start by importing both the Zillow Observed Rent Index (ZORI) data and the ZIP code reference file. Then we reshape ZORI into tidy format and create useful date variables.
+
+```{r}
+# File paths
+zori_path <- "data/zillow_data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv"
+zip_path  <- "data/zillow_data/Zip Codes.csv"
+
+# Tidy ZORI dataset
+zori_data <- read_csv(zori_path) |> 
+  pivot_longer(
+    cols = matches("^20"),   # select columns that look like years
+    names_to = "date",
+    values_to = "rent_index"
+  ) |> 
+  mutate(
+    date = ymd(date),
+    year = year(date),
+    month_num = month(date)
+  )
+
+# Clean ZIP code dataset
+zip_data <- read_csv(zip_path) |> 
+   janitor::clean_names() 
 ```
 
+## Merge the datasets
+Next, we join the rent index data with neighborhood-level ZIP information.
+
+```{r}
+zillow_data <- zori_data |> 
+  left_join(zip_data, by = c("RegionName" = "zip_code")) |> 
+  arrange(RegionName, date)
+```
+
+## Dataset description
+We summarize the size of the final dataset and highlight how many unique ZIP codes and neighborhoods are included.
+
+```{r}
+n_total <- nrow(zillow_data)
+
+n_zipcodes <- n_distinct(zillow_data$RegionName)
+
+n_hoods <- n_distinct(zillow_data$neighborhood)
+
+list(
+  total_observations = n_total,
+  distinct_zipcodes = n_zipcodes,
+  distinct_neighborhoods = n_hoods
+)
+names(zillow_data)
+str(zillow_data$month_num)
+str(zillow_data$year)
+str(zillow_data$date)
+```
+
+The tidy dataset is structured as follows:
+
+- The dataset contains **`r n_total` total observations**.  
+- There are **`r n_zipcodes` unique ZIP codes** represented.  
+- These ZIP codes span **`r n_hoods` different neighborhoods** across NYC.
+
+## ZIP codes not present in ZORI
+We identify which ZIP codes are in the geographic reference file but missing in the Zillow rent dataset.
+
+```{r}
+missing_zipcodes <- setdiff(zip_data$zip_code, unique(zori_data$RegionName))
+```
+
+There are `r length(missing_zipcodes)` ZIP codes absent from the Zillow rent index. The first five are shown below:
+
+```{r}
+zip_data |>
+  filter(zip_code %in% missing_zipcodes) |>
+  select(zip_code, county, neighborhood) |>
+  head(5) |>
+  knitr::kable(caption = "First 5 ZIP Codes Missing from ZORI")
+```
+
+Possible explanations include:
+
+1. **Low listing counts**: ZIP codes with very few rental listings might not meet Zillow’s threshold for index calculation.
+2. **Specialized land use**: ZIP codes dominated by parks, campuses, or commercial zones may lack sufficient market housing.
+3. **Incomplete data**: Some areas might not have reliable or consistent data over time.
+
+## Rental price changes during COVID
+We now compare rent levels between January 2020 and January 2021.
+
+```{r rental price changes}
+price_changes_tmp <- zillow_data |> 
+  filter(date %in% c("2020-01-31", "2021-01-31")) |> 
+ 
+ select(-year) |> 
+  pivot_wider(
+    names_from = date, 
+    values_from = rent_index,
+    names_prefix = "price_"
+  ) |> 
+
+
+  mutate(price_change = `price_2021-01-31` - `price_2020-01-31`) |> 
+  arrange(desc(price_change)) |> 
+  slice(1:10)
+  
+  
+```
+
+The table below shows the 10 ZIP codes with the sharpest declines.
+
+```{r}
+price_changes_tmp |>
+  select(
+    `ZIP Code` = RegionName,
+    Borough = county, 
+    Neighborhood = neighborhood,
+    `Rent Jan 2020` = `price_2020-01-31`,
+    `Rent Jan 2021` = `price_2021-01-31`,
+    `Drop in Rent ($)` =
+  ) |>
+  knitr::kable(
+    digits = 2,
+    caption = "Top 10 NYC ZIP Codes with Largest Rent Drop (Jan 2020 vs Jan 2021)"
+  )
+```
+
+**Interpretation**: The biggest rental declines occurred in Manhattan, particularly in business-heavy areas such as Downtown and Midtown. These trends reflect the pandemic-driven outmigration and drop in demand for high-cost rentals in dense neighborhoods that rely on in-office work.
 
 
